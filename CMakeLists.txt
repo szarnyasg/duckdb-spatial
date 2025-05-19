@@ -16,6 +16,13 @@ add_definitions(-DDUCKDB_PATCH_VERSION=${DUCKDB_PATCH_VERSION})
 
 # Enable network functionality (OpenSSL and GDAL's CURL based fs/drivers)
 option(SPATIAL_USE_NETWORK "Enable network functionality" ON)
+
+if (VCPKG_TARGET_IS_EMSCRIPTEN)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  set(EMSCRIPTEN ON)
+endif()
+
+
 # Enable GEOS support
 option(SPATIAL_USE_GEOS "Enable GEOS support" ON)
 
