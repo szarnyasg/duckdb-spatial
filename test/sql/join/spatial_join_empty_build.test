@@ -29,8 +29,8 @@ SELECT * FROM lhs JOIN rhs ON ST_Intersects(lhs.geom, rhs.geom);
 
 statement ok
 PRAGMA disabled_optimizers='extension'
-query IIII rowsort left_join_result
 
+query IIII rowsort left_join_result
 SELECT * FROM lhs LEFT JOIN rhs ON ST_Intersects(lhs.geom, rhs.geom);
 ----
 
