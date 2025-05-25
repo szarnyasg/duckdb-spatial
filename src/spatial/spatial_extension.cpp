@@ -46,7 +46,8 @@ static void LoadInternal(DatabaseInstance &instance) {
 	RTreeModule::RegisterIndexScan(instance);
 	RTreeModule::RegisterIndexPlanScan(instance);
 
-	RegisterSpatialOperatorExtension(instance);;
+	RegisterSpatialOperatorExtension(instance);
+	;
 }
 
 void SpatialExtension::Load(DuckDB &db) {

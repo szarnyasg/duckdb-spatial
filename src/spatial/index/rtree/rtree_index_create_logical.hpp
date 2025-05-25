@@ -32,6 +32,7 @@ public:
 public:
 	void Serialize(Serializer &writer) const override;
 	static unique_ptr<LogicalExtensionOperator> Deserialize(Deserializer &reader);
+
 public:
 	string GetName() const override {
 		return "CREATE_RTREE_INDEX";

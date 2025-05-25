@@ -39,11 +39,12 @@ public:
 		return !left_projection_map.empty() || !right_projection_map.empty();
 	}
 
-	PhysicalOperator& CreatePlan(ClientContext &context, PhysicalPlanGenerator &generator) override;
+	PhysicalOperator &CreatePlan(ClientContext &context, PhysicalPlanGenerator &generator) override;
 
 public:
 	void Serialize(Serializer &serializer) const override;
 	static unique_ptr<LogicalExtensionOperator> Deserialize(Deserializer &reader);
+
 public:
 	string GetName() const override {
 		return "SPATIAL_JOIN";
@@ -51,6 +52,7 @@ public:
 	string GetExtensionName() const override {
 		return "duckdb_spatial";
 	}
+
 protected:
 	void ResolveTypes() override;
 };

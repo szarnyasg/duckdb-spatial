@@ -4,11 +4,14 @@
 #include "spatial/spatial_types.hpp"
 #include "spatial_join_logical.hpp"
 
+#include "duckdb/catalog/catalog_entry/scalar_function_catalog_entry.hpp"
 #include "duckdb/common/types/row/tuple_data_collection.hpp"
 #include "duckdb/common/types/row/tuple_data_iterator.hpp"
-#include "duckdb/planner/expression/bound_function_expression.hpp"
-#include "duckdb/planner/expression/bound_reference_expression.hpp"
 #include "duckdb/execution/operator/join/physical_comparison_join.hpp"
+#include "duckdb/planner/expression/bound_function_expression.hpp"
+#include "duckdb/planner/expression/bound_operator_expression.hpp"
+#include "duckdb/planner/expression/bound_reference_expression.hpp"
+#include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/storage/buffer_manager.hpp"
 
 namespace duckdb {
@@ -325,9 +328,9 @@ private:
 // Physical Spatial Join Operator
 //======================================================================================================================
 
-PhysicalSpatialJoin::PhysicalSpatialJoin(LogicalOperator &op, PhysicalOperator &left,
-                                         PhysicalOperator &right, unique_ptr<Expression> condition_p,
-                                         JoinType join_type, idx_t estimated_cardinality)
+PhysicalSpatialJoin::PhysicalSpatialJoin(LogicalOperator &op, PhysicalOperator &left, PhysicalOperator &right,
+                                         unique_ptr<Expression> condition_p, JoinType join_type,
+                                         idx_t estimated_cardinality)
     : PhysicalJoin(op, PhysicalOperatorType::EXTENSION, join_type, estimated_cardinality),
       condition(std::move(condition_p)) {
 
@@ -443,6 +446,9 @@ class SpatialJoinGlobalState final : public GlobalSinkState {
 public:
 	unique_ptr<TupleDataCollection> collection;
 
+	// The number of non-null and non-empty geometries on the build side
+	idx_t total_rtree_size = 0;
+
 	// This is initialized in the finalize state
 	unique_ptr<FlatRTree> rtree = nullptr;
 };
@@ -457,8 +463,9 @@ unique_ptr<GlobalSinkState> PhysicalSpatialJoin::GetGlobalSinkState(ClientContex
 
 class SpatialJoinLocalState final : public LocalSinkState {
 public:
-	SpatialJoinLocalState(const PhysicalSpatialJoin &op, ClientContext &context, const shared_ptr<TupleDataLayout> &layout)
-	    : build_side_key_executor(context) {
+	SpatialJoinLocalState(const PhysicalSpatialJoin &op, ClientContext &context,
+	                      const shared_ptr<TupleDataLayout> &layout)
+	    : build_side_key_executor(context), build_side_filter_executor(context) {
 		// Dont keep the tuples in memory after appending.
 		collection = make_uniq<TupleDataCollection>(BufferManager::GetBufferManager(context), layout);
 		collection->InitializeAppend(append_state, TupleDataPinProperties::UNPIN_AFTER_DONE);
@@ -470,6 +477,31 @@ public:
 		build_side_row_chunk.InitializeEmpty(layout->GetTypes());
 
 		build_side_payload_chunk.InitializeEmpty(op.build_side_payload_types);
+
+		auto &catalog = Catalog::GetSystemCatalog(context);
+		auto &entry = catalog.GetEntry<ScalarFunctionCatalogEntry>(context, DEFAULT_SCHEMA, "ST_IsEmpty");
+		auto func = entry.functions.GetFunctionByArguments(context, {GeoTypes::GEOMETRY()});
+
+		auto is_empty_expr = make_uniq<BoundFunctionExpression>(LogicalTypeId::BOOLEAN, func,
+		                                                        vector<unique_ptr<Expression>> {}, nullptr);
+		is_empty_expr->children.push_back(
+		    make_uniq_base<Expression, BoundReferenceExpression>(GeoTypes::GEOMETRY(), 0));
+
+		auto is_not_empty_expr =
+		    make_uniq<BoundOperatorExpression>(ExpressionType::OPERATOR_NOT, LogicalTypeId::BOOLEAN);
+		is_not_empty_expr->children.push_back(std::move(is_empty_expr));
+
+		auto is_not_null_expr =
+		    make_uniq<BoundOperatorExpression>(ExpressionType::OPERATOR_IS_NOT_NULL, LogicalTypeId::BOOLEAN);
+		is_not_null_expr->children.push_back(
+		    make_uniq_base<Expression, BoundReferenceExpression>(GeoTypes::GEOMETRY(), 0));
+
+		auto filter_expr = make_uniq_base<Expression, BoundConjunctionExpression>(
+		    ExpressionType::CONJUNCTION_AND, std::move(is_not_empty_expr), std::move(is_not_null_expr));
+
+		build_side_filter_expr = std::move(filter_expr);
+		build_side_filter_executor.AddExpression(*build_side_filter_expr);
+		build_side_filter_sel.Initialize(STANDARD_VECTOR_SIZE);
 	}
 
 	TupleDataAppendState append_state;
@@ -482,6 +514,14 @@ public:
 	DataChunk build_side_row_chunk;
 	// Used to execute the build side join key expression
 	ExpressionExecutor build_side_key_executor;
+
+	// Used to count how many non-null and non-empty geometries we have on the build side
+	// (so we can initialize the rtree to the correct size)
+	unique_ptr<Expression> build_side_filter_expr;
+	ExpressionExecutor build_side_filter_executor;
+	SelectionVector build_side_filter_sel; // not used, but needed for the executor
+
+	idx_t build_side_non_null_non_empty_count = 0;
 };
 
 unique_ptr<LocalSinkState> PhysicalSpatialJoin::GetLocalSinkState(ExecutionContext &context) const {
@@ -496,6 +536,10 @@ SinkResultType PhysicalSpatialJoin::Sink(ExecutionContext &context, DataChunk &c
 
 	lstate.build_side_key_chunk.Reset();
 	lstate.build_side_key_executor.Execute(chunk, lstate.build_side_key_chunk);
+
+	// Count how many non-null and non-empty geometries we have on the build side
+	lstate.build_side_non_null_non_empty_count +=
+	    lstate.build_side_filter_executor.SelectExpression(lstate.build_side_key_chunk, lstate.build_side_filter_sel);
 
 	if (build_side_payload_types.empty()) {
 		// There are only keys. Make the payload chunk empty
@@ -537,6 +581,9 @@ SinkCombineResultType PhysicalSpatialJoin::Combine(ExecutionContext &context, Op
 	// Append the local collection to the global collection
 	gstate.collection->Combine(*lstate.collection);
 
+	// Merge the non-null and non-empty count
+	gstate.total_rtree_size += lstate.build_side_non_null_non_empty_count;
+
 	return SinkCombineResultType::FINISHED;
 }
 
@@ -551,7 +598,7 @@ SinkFinalizeType PhysicalSpatialJoin::Finalize(Pipeline &pipeline, Event &event,
 
 	// Initialize the flat R-Tree
 	static constexpr auto RTREE_NODE_SIZE = 32;
-	gstate.rtree = make_uniq<FlatRTree>(BufferAllocator::Get(context), gstate.collection->Count(), RTREE_NODE_SIZE);
+	gstate.rtree = make_uniq<FlatRTree>(BufferAllocator::Get(context), gstate.total_rtree_size, RTREE_NODE_SIZE);
 
 	// Now, this is where we build the rtree, by iterating over the tuples in the collection.
 	// We need to keep everything pinned so that we can probe the pointers later

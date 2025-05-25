@@ -281,14 +281,13 @@ void LogicalCreateRTreeIndex::Serialize(Serializer &writer) const {
 	LogicalExtensionOperator::Serialize(writer);
 	writer.WritePropertyWithDefault(300, "operator_type", string(OPERATOR_TYPE_NAME));
 	writer.WritePropertyWithDefault<unique_ptr<CreateIndexInfo>>(400, "info", info);
-	writer.WritePropertyWithDefault<vector<unique_ptr<Expression>>>(401, "unbound_expressions",
-																	unbound_expressions);
+	writer.WritePropertyWithDefault<vector<unique_ptr<Expression>>>(401, "unbound_expressions", unbound_expressions);
 }
 
 unique_ptr<LogicalExtensionOperator> LogicalCreateRTreeIndex::Deserialize(Deserializer &reader) {
 	auto create_info = reader.ReadPropertyWithDefault<unique_ptr<CreateInfo>>(400, "info");
 	auto unbound_expressions =
-		reader.ReadPropertyWithDefault<vector<unique_ptr<Expression>>>(401, "unbound_expressions");
+	    reader.ReadPropertyWithDefault<vector<unique_ptr<Expression>>>(401, "unbound_expressions");
 
 	auto info = unique_ptr_cast<CreateInfo, CreateIndexInfo>(std::move(create_info));
 
@@ -301,7 +300,7 @@ unique_ptr<LogicalExtensionOperator> LogicalCreateRTreeIndex::Deserialize(Deseri
 
 	// Return the new operator
 	return make_uniq_base<LogicalExtensionOperator, LogicalCreateRTreeIndex>(
-		std::move(info), std::move(unbound_expressions), table_entry);
+	    std::move(info), std::move(unbound_expressions), table_entry);
 }
 
 } // namespace duckdb

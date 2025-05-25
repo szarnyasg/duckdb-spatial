@@ -1294,7 +1294,6 @@ struct ST_Read_Meta {
 				continue;
 			}
 
-
 			output.data[0].SetValue(output_idx, file.path);
 			output.data[1].SetValue(output_idx, dataset->GetDriver()->GetDescription());
 			output.data[2].SetValue(output_idx, dataset->GetDriver()->GetMetadataItem(GDAL_DMD_LONGNAME));
