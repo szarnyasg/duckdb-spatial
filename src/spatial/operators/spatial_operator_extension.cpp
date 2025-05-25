@@ -35,7 +35,7 @@ public:
 		}
 
 		throw SerializationException("This version of the spatial extension does not support operator type '%s!",
-										 operator_type);
+		                             operator_type);
 	}
 };
 
@@ -45,4 +45,4 @@ void RegisterSpatialOperatorExtension(DatabaseInstance &db) {
 	db.config.operator_extensions.push_back(make_uniq<SpatialOperatorExtension>());
 }
 
-}
+} // namespace duckdb

@@ -69,14 +69,14 @@ void LogicalSpatialJoin::ResolveTypes() {
 	types.insert(types.end(), right_types.begin(), right_types.end());
 }
 
-PhysicalOperator& LogicalSpatialJoin::CreatePlan(ClientContext &context, PhysicalPlanGenerator &generator) {
+PhysicalOperator &LogicalSpatialJoin::CreatePlan(ClientContext &context, PhysicalPlanGenerator &generator) {
 
 	// Return a new PhysicalSpatialJoin operator
 	auto &left = generator.CreatePlan(*children[0]);
 	auto &right = generator.CreatePlan(*children[1]);
 
-	return generator.Make<PhysicalSpatialJoin>(
-	    *this, left, right, std::move(spatial_predicate), join_type, estimated_cardinality);
+	return generator.Make<PhysicalSpatialJoin>(*this, left, right, std::move(spatial_predicate), join_type,
+	                                           estimated_cardinality);
 }
 
 void LogicalSpatialJoin::Serialize(Serializer &writer) const {

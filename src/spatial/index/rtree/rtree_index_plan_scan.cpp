@@ -58,7 +58,8 @@ public:
 		    expr, [&](Expression &child) { RewriteIndexExpression(index, get, child, rewrite_possible); });
 	}
 
-	static void RewriteIndexExpressionForFilter(Index &index, LogicalGet &get, unique_ptr<Expression> &expr, idx_t filter_idx, bool &rewrite_possible) {
+	static void RewriteIndexExpressionForFilter(Index &index, LogicalGet &get, unique_ptr<Expression> &expr,
+	                                            idx_t filter_idx, bool &rewrite_possible) {
 		if (expr->type == ExpressionType::BOUND_COLUMN_REF) {
 			auto &bound_colref = expr->Cast<BoundColumnRefExpression>();
 			if (bound_colref.binding.column_index != filter_idx) {
@@ -69,8 +70,9 @@ public:
 			expr = make_uniq<BoundReferenceExpression>(bound_colref.return_type, 0ULL);
 			return;
 		}
-		ExpressionIterator::EnumerateChildren(
-			*expr, [&](unique_ptr<Expression> &child) { RewriteIndexExpressionForFilter(index, get, child, filter_idx, rewrite_possible); });
+		ExpressionIterator::EnumerateChildren(*expr, [&](unique_ptr<Expression> &child) {
+			RewriteIndexExpressionForFilter(index, get, child, filter_idx, rewrite_possible);
+		});
 	}
 
 	static bool IsSpatialPredicate(const ScalarFunction &function, const unordered_set<string> &predicates) {
@@ -132,7 +134,7 @@ public:
 		if (op.type == LogicalOperatorType::LOGICAL_GET) {
 			// this is a LogicalGet - check if there is an ExpressionFilter
 			auto &get = op.Cast<LogicalGet>();
-			for(auto &entry : get.table_filters.filters) {
+			for (auto &entry : get.table_filters.filters) {
 				if (entry.second->filter_type != TableFilterType::EXPRESSION_FILTER) {
 					// not an expression filter
 					continue;
@@ -147,9 +149,9 @@ public:
 		return false;
 	}
 
-
 	static bool TryOptimizeGet(Binder &binder, ClientContext &context, unique_ptr<LogicalOperator> &get_ptr,
-							unique_ptr<LogicalOperator> &root, optional_ptr<LogicalFilter> filter, optional_idx filter_column_idx, unique_ptr<Expression> &filter_expr) {
+	                           unique_ptr<LogicalOperator> &root, optional_ptr<LogicalFilter> filter,
+	                           optional_idx filter_column_idx, unique_ptr<Expression> &filter_expr) {
 		auto &get = get_ptr->Cast<LogicalGet>();
 		if (get.function.name != "seq_scan") {
 			return false;
@@ -182,7 +184,8 @@ public:
 			bool rewrite_possible = true;
 			auto index_expr = index_entry.unbound_expressions[0]->Copy();
 			if (filter_column_idx.IsValid()) {
-				RewriteIndexExpressionForFilter(index_entry, get, index_expr, filter_column_idx.GetIndex(), rewrite_possible);
+				RewriteIndexExpressionForFilter(index_entry, get, index_expr, filter_column_idx.GetIndex(),
+				                                rewrite_possible);
 			} else {
 				RewriteIndexExpression(index_entry, get, *index_expr, rewrite_possible);
 			}
