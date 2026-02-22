@@ -1026,7 +1026,7 @@ struct ST_Distance_Spheroid {
 
 	static constexpr auto EXAMPLE = R"(
 	-- Note: the coordinates are in WGS84 and [latitude, longitude] axis order
-	-- Whats the distance between New York and Amsterdam (JFK and AMS airport)?
+	-- What's the distance between New York and Amsterdam (JFK and AMS airport)?
 	SELECT st_distance_spheroid(
 	st_point(40.6446, -73.7797),
 	st_point(52.3130, 4.7725)
